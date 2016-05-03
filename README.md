@@ -1,3 +1,6 @@
+
+# This branch is deprecated! Use template for fnSorting functionality
+
 # Reactive Table
 A reactive table designed for Meteor.
 
