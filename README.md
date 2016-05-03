@@ -1,15 +1,6 @@
 # Reactive Table
-A reactive table designed for Meteor.
+A reactive table for Meteor, using [Blaze](https://github.com/meteor/blaze).
 
-Demo and Feature Comparison: http://reactive-table.meteor.com/
-
-Another Demo: http://reactive-table-leaderboard.meteor.com/
-
-### Note on Versions
-The latest version of reactive-table only supports Meteor version 0.9.0 or higher.
-For Meteor 0.8, use reactive-table version 0.3.21.
-For older versions of Meteor, you can use reactive-table v0.2.5 ([documentation](https://github.com/aslagle/reactive-table/tree/v0.2.5)).
-If you're updating to Meteor 0.8.0, note that reactiveTable is now a template with keyword arguments rather than a helper. The functionality should be the same, but please report bugs in the issues.
 
 ### Table of Contents
 - [Quick Start](#quick-start)
@@ -17,6 +8,7 @@ If you're updating to Meteor 0.8.0, note that reactiveTable is now a template wi
   - [Settings](#settings)
     - [rowClass Examples](#rowclass-examples)
     - [Settings Object](#settings-object)
+    - [Child Table](#child-table)
   - [Styling](#styling)
   - [Setting columns](#setting-columns)
     - [Setting column headers](#setting-column-headers)
@@ -79,6 +71,7 @@ The reactiveTable helper accepts additional arguments that can be used to config
 * `showColumnToggles`: Boolean. Adds a 'Columns' button to the top right that allows the user to toggle which columns are displayed. (Note: there aren't translations for this button yet - please [add one](#internationalization) if you're using it.) Add `hidden` to fields to hide them unless toggled on, see below. Add `hideToggle` to a field to exclude it from the toggle list. Default `false`.
 * `useFontAwesome`: Boolean. Whether to use [Font Awesome](http://fortawesome.github.io/Font-Awesome/) for icons. Requires the `fortawesome:fontawesome` package to be installed. Default `true` if `fortawesome:fontawesome` is installed, else `false`.
 * `enableRegex`: Boolean. Whether to use filter text as a regular expression instead of a regular search term. When true, users won't be able to filter by special characters without escaping them. Default `false`. (Note: Setting this option on the client won't affect server-side filtering - see [Server-side pagination and filtering](#server-side-pagination-and-filtering-beta))
+* `ready`: ReactiveVar(Boolean). When using ReactiveTable.publish on the server, pass in a ReactiveVar for ready on the client and it will be updated to true or false so you can check if the subscription is ready.
 * `noDataTmpl`: Template. Template to render in place of the table when the collection is empty or filtered to 0 rows. Default none (renders table header with no rows).
 * `multiColumnSort`: Boolean. Whether to enable sorting with multiple columns based on the order the user clicks them. Default: `true`.
 * `class`: String. Classes to add to the table element in addition to 'reactive-table'. Default: 'table table-striped table-hover col-sm-12'.
@@ -133,6 +126,90 @@ Define the settings in a helper for the template that calls reactiveTable:
 You can continue to pass some settings as named arguments while grouping the others into the settings object:
 
     {{> reactiveTable collection=collection fields=fields settings=settings}}
+
+
+
+
+### Child Table
+
+If your data already has an array child element, you can make the row expand to show the child data easily.
+
+This is only recommended for smaller data sets since you could potentially be loading too much data. You can
+potentially do your own joins and populate the child array with the data from another collection manually.
+
+For example if I had data such as
+
+```js
+{
+  user_id: '12345',
+  name: 'John Smith',
+  purchases: [
+    {
+      purchase_id: 888,
+      item_name: 'Book',
+      qty: 1,
+      price: 8.88
+    },
+    {
+      purchase_id: 889,
+      item_name: 'Pencil',
+      qty: 12,
+      price: 0.79
+    }
+  ]
+}
+```
+
+I could expose the underlying `purchases` with
+
+```js
+settings = {
+  fields: [
+    {
+      key: 'user_id',
+      label: 'Customer #',
+    },
+    {
+      key: 'name',
+      label: 'Name',
+    }
+  ],
+  children: {
+    // define which column to attach the expand icon to, matching by label
+    expandIconColLabel: 'Name',
+     
+    // the array field containing the child data
+    key: 'purchases' 
+    
+    // supports typical field options
+    fields: [
+      {
+        key: 'item_name',
+        label: 'Item',
+        headerClass: 'col-item-name',
+        cellClass: 'col-item-name',
+        tmpl: Template.PurchaseItemName
+      },
+      {
+        key: 'qty',
+        label: 'Qty'
+      },
+      {
+        key: 'price',
+        label: 'Price',
+        fn: function( price, childData ){
+          return ...;
+        }
+      }
+    ]
+  }
+}
+```
+
+This would result in a normal table, except the column with label defined by `children.expandIconColLabel` would have an expand icon prepend to it
+
+
+
 
 ### Styling
 
@@ -227,13 +304,15 @@ You can also compute a function on the attribute's value to display in the table
         {
             key: 'resources',
             label: 'Number of Resources',
-            fn: function (value, object) { return value.length; }
+            fn: function (value, object, key) { return value.length; }
         }
     ] }
 
 If the key exists in the record, it will be passed to `fn` in `value`. Otherwise, `value` will be `null`.
 
 The `object` argument contains the full object, so you can compute a value using multiple fields.
+
+The `key` argument contains the key of the field. This allows you to get the reference point of where the value comes from in case fields are generated dynamically.
 
 By default for client-side collections, fields that use `fn` will be sorted by the result of this function. If you want to sort by the field's original value instead (for example, if you are making a date human-readable), set `sortByValue` to `true` on the field object.
 
@@ -246,7 +325,7 @@ Be aware that it is impossible at the moment to filter on virtual fields.
 You can use HTML in a virtual column by creating a Spacebars SafeString:
 
     fn: function (value) {
-        return new Spacebars.SafeString('<a href="+Routes.route['view'].path({_id:value})+">View</a>');
+        return new Spacebars.SafeString("<a href="+Routes.route['view'].path({_id:value})+">View</a>");
     }
 
 When adding user-generated fields to the HTML, ensure that they have been properly escaped to prevent cross-site scripting vulnerabilities.
@@ -391,6 +470,8 @@ Arguments:
 
 Inside the functions, `this` is the publish handler object as in [Meteor.publish](http://docs.meteor.com/#/full/meteor_publish), so `this.userId` is available.
 
+Note: Although ReactiveTable.publish uses Meteor.publish, it publishes the rows to a special collection that's only accessible inside the reactive-table package. If you want to use your collection directly you'll have to publish it separately as well.
+
 On the client, use the publication name as the collection argument to the reactiveTable template.
 
   {{> reactiveTable collection="name"}}
@@ -451,6 +532,7 @@ will provide you search results, while
 will crash on the server, since "me + you" is not a valid regex ("me \\+ you" would be correct).
   > Default is to disable regex and automatically escape the term, since most users wont 'speak' regex and just type in a search term.
 
+
 ## Custom Filters
 
 reactive-table allows you to add multiple filters, anywhere on the page, and link them to a table instead of using the default filter box.
@@ -475,6 +557,8 @@ Use the id of the filter in the `filters` argument in your reactiveTable setting
 * `class`: String. HTML class attribute to apply to the element containing the filter. Default: `input-group`.
 * `label`: String. Label to display with the filter box.
 * `fields`: Array. Optional array of field keys that this filter should apply to, eg `["firstName", "lastName"]`. Default: `[]`, which will use all fields in the table. Note that you can't use can't use arrays directly in Spacebars templates - you'll need to write a template helper that returns the array.
+
+By default, the filters are combined with `$and`, but you can set the operator to `$or` with the `filterOperator` setting. Add it to the main reactiveTable settings for client-side collections, or the server-side settings when using server-side filtering and pagination. 
 
 ### Creating your own filter
 
@@ -579,6 +663,7 @@ ReactiveTable.publish("user-purchases", function () {
 
 Note that the filter will automatically be passed on to the publication and be applied to the collection it returns.
 
+
 ## Internationalization
 
 Internationalization support is provided using [anti:i18n](https://github.com/anticoders/meteor-i18n).
@@ -602,6 +687,7 @@ We currently have translations (except the 'Columns' button) for:
 - Finnish (fi)
 - French (fr)
 - German (de)
+- Greek (gr)
 - Hebrew (he)
 - Icelandic (is)
 - Italian (it)
